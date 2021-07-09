@@ -157,10 +157,10 @@ class Gate implements GateContract
     {
         $abilities = $abilities ?: [
             'viewAny' => 'viewAny',
-            'view'    => 'view',
-            'create'  => 'create',
-            'update'  => 'update',
-            'delete'  => 'delete',
+            'view' => 'view',
+            'create' => 'create',
+            'update' => 'update',
+            'delete' => 'delete',
         ];
 
         foreach ($abilities as $ability => $method) {
@@ -799,5 +799,18 @@ class Gate implements GateContract
     public function policies()
     {
         return $this->policies;
+    }
+
+    /**
+     * Set the container instance used by the gate.
+     *
+     * @param  \Illuminate\Contracts\Container\Container  $container
+     * @return $this
+     */
+    public function setContainer(Container $container)
+    {
+        $this->container = $container;
+
+        return $this;
     }
 }

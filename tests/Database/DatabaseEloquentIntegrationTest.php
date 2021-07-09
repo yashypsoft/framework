@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Database\QueryException;
 use Illuminate\Pagination\AbstractPaginator as Paginator;
+use Illuminate\Pagination\Cursor;
+use Illuminate\Pagination\CursorPaginator;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Date;
@@ -36,13 +38,13 @@ class DatabaseEloquentIntegrationTest extends TestCase
         $db = new DB;
 
         $db->addConnection([
-            'driver'    => 'sqlite',
-            'database'  => ':memory:',
+            'driver' => 'sqlite',
+            'database' => ':memory:',
         ]);
 
         $db->addConnection([
-            'driver'    => 'sqlite',
-            'database'  => ':memory:',
+            'driver' => 'sqlite',
+            'database' => ':memory:',
         ], 'second_connection');
 
         $db->bootEloquent();
@@ -317,6 +319,86 @@ class DatabaseEloquentIntegrationTest extends TestCase
         ])->groupBy('email')->getQuery();
 
         $this->assertEquals(4, $query->getCountForPagination());
+    }
+
+    public function testCursorPaginatedModelCollectionRetrieval()
+    {
+        EloquentTestUser::create(['id' => 1, 'email' => 'taylorotwell@gmail.com']);
+        EloquentTestUser::create($secondParams = ['id' => 2, 'email' => 'abigailotwell@gmail.com']);
+        EloquentTestUser::create(['id' => 3, 'email' => 'foo@gmail.com']);
+
+        CursorPaginator::currentCursorResolver(function () {
+            return null;
+        });
+        $models = EloquentTestUser::oldest('id')->cursorPaginate(2);
+
+        $this->assertCount(2, $models);
+        $this->assertInstanceOf(CursorPaginator::class, $models);
+        $this->assertInstanceOf(EloquentTestUser::class, $models[0]);
+        $this->assertInstanceOf(EloquentTestUser::class, $models[1]);
+        $this->assertSame('taylorotwell@gmail.com', $models[0]->email);
+        $this->assertSame('abigailotwell@gmail.com', $models[1]->email);
+        $this->assertTrue($models->hasMorePages());
+        $this->assertTrue($models->hasPages());
+
+        CursorPaginator::currentCursorResolver(function () use ($secondParams) {
+            return new Cursor($secondParams);
+        });
+        $models = EloquentTestUser::oldest('id')->cursorPaginate(2);
+
+        $this->assertCount(1, $models);
+        $this->assertInstanceOf(CursorPaginator::class, $models);
+        $this->assertInstanceOf(EloquentTestUser::class, $models[0]);
+        $this->assertSame('foo@gmail.com', $models[0]->email);
+        $this->assertFalse($models->hasMorePages());
+        $this->assertTrue($models->hasPages());
+    }
+
+    public function testPreviousCursorPaginatedModelCollectionRetrieval()
+    {
+        EloquentTestUser::create(['id' => 1, 'email' => 'taylorotwell@gmail.com']);
+        EloquentTestUser::create(['id' => 2, 'email' => 'abigailotwell@gmail.com']);
+        EloquentTestUser::create($thirdParams = ['id' => 3, 'email' => 'foo@gmail.com']);
+
+        CursorPaginator::currentCursorResolver(function () use ($thirdParams) {
+            return new Cursor($thirdParams, false);
+        });
+        $models = EloquentTestUser::oldest('id')->cursorPaginate(2);
+
+        $this->assertCount(2, $models);
+        $this->assertInstanceOf(CursorPaginator::class, $models);
+        $this->assertInstanceOf(EloquentTestUser::class, $models[0]);
+        $this->assertInstanceOf(EloquentTestUser::class, $models[1]);
+        $this->assertSame('taylorotwell@gmail.com', $models[0]->email);
+        $this->assertSame('abigailotwell@gmail.com', $models[1]->email);
+        $this->assertTrue($models->hasMorePages());
+        $this->assertTrue($models->hasPages());
+    }
+
+    public function testCursorPaginatedModelCollectionRetrievalWhenNoElements()
+    {
+        CursorPaginator::currentCursorResolver(function () {
+            return null;
+        });
+        $models = EloquentTestUser::oldest('id')->cursorPaginate(2);
+
+        $this->assertCount(0, $models);
+        $this->assertInstanceOf(CursorPaginator::class, $models);
+
+        Paginator::currentPageResolver(function () {
+            return new Cursor(['id' => 1]);
+        });
+        $models = EloquentTestUser::oldest('id')->cursorPaginate(2);
+
+        $this->assertCount(0, $models);
+    }
+
+    public function testCursorPaginatedModelCollectionRetrievalWhenNoElementsAndDefaultPerPage()
+    {
+        $models = EloquentTestUser::oldest('id')->cursorPaginate();
+
+        $this->assertCount(0, $models);
+        $this->assertInstanceOf(CursorPaginator::class, $models);
     }
 
     public function testFirstOrCreate()
@@ -811,12 +893,12 @@ class DatabaseEloquentIntegrationTest extends TestCase
         $user->friends()->create(['email' => 'abigailotwell@gmail.com']);
 
         $user->friends()->get()->each(function ($friend) {
-            $this->assertTrue($friend->pivot instanceof EloquentTestFriendPivot);
+            $this->assertInstanceOf(EloquentTestFriendPivot::class, $friend->pivot);
         });
 
         $soleFriend = $user->friends()->where('email', 'abigailotwell@gmail.com')->sole();
 
-        $this->assertTrue($soleFriend->pivot instanceof EloquentTestFriendPivot);
+        $this->assertInstanceOf(EloquentTestFriendPivot::class, $soleFriend->pivot);
     }
 
     public function testBelongsToManyRelationshipMissingModelExceptionWithSoleQueryWorks()
@@ -1377,14 +1459,14 @@ class DatabaseEloquentIntegrationTest extends TestCase
         EloquentTestUser::find(2)->update(['email' => 'dev@mathieutu.ovh']);
 
         $this->assertCount(3, $users);
-        $this->assertNotEquals('Mathieu TUDISCO', $users[0]->name);
-        $this->assertNotEquals('dev@mathieutu.ovh', $users[1]->email);
+        $this->assertNotSame('Mathieu TUDISCO', $users[0]->name);
+        $this->assertNotSame('dev@mathieutu.ovh', $users[1]->email);
 
         $refreshedUsers = $users->fresh();
 
         $this->assertCount(2, $refreshedUsers);
-        $this->assertEquals('Mathieu TUDISCO', $refreshedUsers[0]->name);
-        $this->assertEquals('dev@mathieutu.ovh', $refreshedUsers[1]->email);
+        $this->assertSame('Mathieu TUDISCO', $refreshedUsers[0]->name);
+        $this->assertSame('dev@mathieutu.ovh', $refreshedUsers[1]->email);
     }
 
     public function testTimestampsUsingDefaultDateFormat()
@@ -1817,10 +1899,10 @@ class DatabaseEloquentIntegrationTest extends TestCase
             ]);
 
         $this->assertInstanceOf(MorphPivot::class, $freshPivot = $pivot->fresh());
-        $this->assertEquals('primary', $freshPivot->taxonomy);
+        $this->assertSame('primary', $freshPivot->taxonomy);
 
         $this->assertSame($pivot, $pivot->refresh());
-        $this->assertEquals('primary', $pivot->taxonomy);
+        $this->assertSame('primary', $pivot->taxonomy);
     }
 
     /**

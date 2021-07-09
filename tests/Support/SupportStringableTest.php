@@ -62,6 +62,14 @@ class SupportStringableTest extends TestCase
         $this->assertTrue($stringable->matchAll('/nothing/')->isEmpty());
     }
 
+    public function testTest()
+    {
+        $stringable = $this->stringable('foo bar');
+
+        $this->assertTrue($stringable->test('/bar/'));
+        $this->assertTrue($stringable->test('/foo (.*)/'));
+    }
+
     public function testTrim()
     {
         $this->assertSame('foo', (string) $this->stringable(' foo ')->trim());
@@ -84,6 +92,19 @@ class SupportStringableTest extends TestCase
         $this->assertSame('Taylor Otwell', (string) $this->stringable('Taylor Otwell')->words(3));
     }
 
+    public function testUnless()
+    {
+        $this->assertSame('unless false', (string) $this->stringable('unless')->unless(false, function ($stringable, $value) {
+            return $stringable->append(' false');
+        }));
+
+        $this->assertSame('unless true fallbacks to default', (string) $this->stringable('unless')->unless(true, function ($stringable, $value) {
+            return $stringable->append($value);
+        }, function ($stringable) {
+            return $stringable->append(' true fallbacks to default');
+        }));
+    }
+
     public function testWhenEmpty()
     {
         tap($this->stringable(), function ($stringable) {
@@ -98,6 +119,23 @@ class SupportStringableTest extends TestCase
 
         $this->assertSame('not-empty', (string) $this->stringable('not-empty')->whenEmpty(function () {
             return 'empty';
+        }));
+    }
+
+    public function testWhenNotEmpty()
+    {
+        tap($this->stringable(), function ($stringable) {
+            $this->assertSame($stringable, $stringable->whenNotEmpty(function ($stringable) {
+                return $stringable.'.';
+            }));
+        });
+
+        $this->assertSame('', (string) $this->stringable()->whenNotEmpty(function ($stringable) {
+            return $stringable.'.';
+        }));
+
+        $this->assertSame('Not empty.', (string) $this->stringable('Not empty')->whenNotEmpty(function ($stringable) {
+            return $stringable.'.';
         }));
     }
 
@@ -125,6 +163,34 @@ class SupportStringableTest extends TestCase
         }, function ($stringable) {
             return $stringable->append('fallbacks to default');
         }));
+    }
+
+    public function testUnlessTruthy()
+    {
+        $this->assertSame('unless', (string) $this->stringable('unless')->unless(1, function ($stringable, $value) {
+            return $stringable->append($value)->append('true');
+        }));
+
+        $this->assertSame('unless true fallbacks to default with value 1',
+            (string) $this->stringable('unless true ')->unless(1, function ($stringable, $value) {
+                return $stringable->append($value);
+            }, function ($stringable, $value) {
+                return $stringable->append('fallbacks to default with value ')->append($value);
+            }));
+    }
+
+    public function testUnlessFalsy()
+    {
+        $this->assertSame('unless 0', (string) $this->stringable('unless ')->unless(0, function ($stringable, $value) {
+            return $stringable->append($value);
+        }));
+
+        $this->assertSame('gets the value 0',
+            (string) $this->stringable('gets the value ')->unless(0, function ($stringable, $value) {
+                return $stringable->append($value);
+            }, function ($stringable) {
+                return $stringable->append('fallbacks to default');
+            }));
     }
 
     public function testTrimmedOnlyWhereNecessary()
@@ -409,6 +475,14 @@ class SupportStringableTest extends TestCase
         $this->assertSame(11, $this->stringable('foo bar baz')->length('UTF-8'));
     }
 
+    public function testReplace()
+    {
+        $this->assertSame('foo/foo/foo', (string) $this->stringable('?/?/?')->replace('?', 'foo'));
+        $this->assertSame('bar/bar', (string) $this->stringable('?/?')->replace('?', 'bar'));
+        $this->assertSame('?/?/?', (string) $this->stringable('? ? ?')->replace(' ', '/'));
+        $this->assertSame('foo/bar/baz/bam', (string) $this->stringable('?1/?2/?3/?4')->replace(['?1', '?2', '?3', '?4'], ['foo', 'bar', 'baz', 'bam']));
+    }
+
     public function testReplaceArray()
     {
         $this->assertSame('foo/bar/baz', (string) $this->stringable('?/?/?')->replaceArray('?', ['foo', 'bar', 'baz']));
@@ -442,6 +516,20 @@ class SupportStringableTest extends TestCase
         // Test for multibyte string support
         $this->assertSame('Malmö Jönkxxxping', (string) $this->stringable('Malmö Jönköping')->replaceLast('ö', 'xxx'));
         $this->assertSame('Malmö Jönköping', (string) $this->stringable('Malmö Jönköping')->replaceLast('', 'yyy'));
+    }
+
+    public function testRemove()
+    {
+        $this->assertSame('Fbar', (string) $this->stringable('Foobar')->remove('o'));
+        $this->assertSame('Foo', (string) $this->stringable('Foobar')->remove('bar'));
+        $this->assertSame('oobar', (string) $this->stringable('Foobar')->remove('F'));
+        $this->assertSame('Foobar', (string) $this->stringable('Foobar')->remove('f'));
+        $this->assertSame('oobar', (string) $this->stringable('Foobar')->remove('f', false));
+
+        $this->assertSame('Fbr', (string) $this->stringable('Foobar')->remove(['o', 'a']));
+        $this->assertSame('Fooar', (string) $this->stringable('Foobar')->remove(['f', 'b']));
+        $this->assertSame('ooar', (string) $this->stringable('Foobar')->remove(['f', 'b'], false));
+        $this->assertSame('Foobar', (string) $this->stringable('Foo|bar')->remove(['f', '|']));
     }
 
     public function testSnake()
@@ -579,5 +667,17 @@ class SupportStringableTest extends TestCase
     {
         $this->assertEquals("<p><em>hello world</em></p>\n", $this->stringable('*hello world*')->markdown());
         $this->assertEquals("<h1>hello world</h1>\n", $this->stringable('# hello world')->markdown());
+    }
+
+    public function testRepeat()
+    {
+        $this->assertSame('aaaaa', (string) $this->stringable('a')->repeat(5));
+        $this->assertSame('', (string) $this->stringable('')->repeat(5));
+    }
+
+    public function testWordCount()
+    {
+        $this->assertEquals(2, $this->stringable('Hello, world!')->wordCount());
+        $this->assertEquals(10, $this->stringable('Hi, this is my first contribution to the Laravel framework.')->wordCount());
     }
 }
